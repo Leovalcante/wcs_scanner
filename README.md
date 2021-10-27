@@ -3,7 +3,7 @@
 
 Scan Oracle WebCenter Sites platform looking for its known vulnerabilities.
 
-### Usage
+## Usage
 ```bash
 python3 wcs_scanner.py http://example.com
 ```
@@ -34,7 +34,7 @@ sqlmap --dbms Oracle --url http://example.com/cs/ContentServer --data "_authkey_
 - https://www.exploit-db.com/exploits/44752
 
 
-### TODO
+## TODO
 Nuclei templates for:
 - cve-2019-2578
 - cve-2019-2579
