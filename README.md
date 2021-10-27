@@ -4,7 +4,7 @@
 Scan Oracle WebCenter Sites platform looking for its known vulnerabilities.
 
 ### Usage
-```python
+```bash
 python3 wcs_scanner.py http://example.com
 ```
 
