@@ -36,5 +36,4 @@ sqlmap --dbms Oracle --url http://example.com/cs/ContentServer --data "_authkey_
 
 ## TODO
 Nuclei templates for:
-- cve-2019-2578
 - cve-2019-2579
